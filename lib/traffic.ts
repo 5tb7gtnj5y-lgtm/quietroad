@@ -237,9 +237,29 @@ export async function findGreggs(line: Point[], journey: boolean): Promise<Gregg
   const location = points.map(p => p[1].toFixed(5) + ',' + p[0].toFixed(5)).join(',');
   const around = journey ? '(around:800,' + location + ')' : '(around:2500,' + location + ')';
   const q = '[out:json][timeout:20];(nwr["brand"~"^Greggs$",i]' + around + ';nwr["name"~"^Greggs($| )",i]' + around + ';);out center tags;';
-  const data = await getJson<{ elements: { type: string; id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> }[] }>(
-    'https://overpass-api.de/api/interpreter?data=' + encodeURIComponent(q), 900000, 24000
-  );
+  type OverpassResults = { elements: { type: string; id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> }[]; remark?: string };
+  // POST avoids URL length limits for journeys. Public Overpass instances can be busy.
+  // Try a separate operator if the first instance is unavailable.
+  let data: OverpassResults | undefined;
+  let lastError: unknown;
+  for (const endpoint of ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter']) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'QuietRoad/1.0 (personal UK travel planner)' },
+        body: new URLSearchParams({ data: q }),
+        signal: AbortSignal.timeout(16000),
+      });
+      if (!response.ok) throw new Error('Map service returned ' + response.status);
+      const result = (await response.json()) as OverpassResults;
+      if (!Array.isArray(result.elements) || result.remark) throw new Error('Map service could not complete the query');
+      data = result;
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!data) throw lastError || new Error('Map service unavailable');
   const seen = new Set<string>();
   const values: Greggs[] = [];
   const path = reduceLine(line, 240);
