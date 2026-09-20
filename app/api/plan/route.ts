@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const geometry: Point[] = route?.geometry || [from.point];
     const userRoad = first.match(/\b[AMB]\d{1,4}(?:\(M\))?(?!\w)/i)?.[0]?.toUpperCase();
     const roads = route?.roads.length ? route.roads : userRoad ? [userRoad] : [];
-    const key = typeof body.trafficKey === 'string' ? body.trafficKey.trim() : '';
+    const key = process.env.TOMTOM_API_KEY?.trim() || '';
     const includeGreggs = body.showGreggs !== false;
     const [history, bakeries, live] = await Promise.allSettled([
       getSamples(roads, geometry),
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     if (samples.length && !profile.daySupported) notes.push('The available hourly count samples are for weekdays. Choose a weekday for four comparable times.');
     if (samples.some(s => s.year < 2021)) notes.push('Some nearby counts are older; use these patterns with caution.');
     if (bakeries.status === 'rejected' && includeGreggs) notes.push('Greggs locations could not be checked right now.');
-    if (key && !liveSamples.length) notes.push('Live traffic could not be retrieved. Check the traffic key or try later.');
+    if (key && !liveSamples.length) notes.push('Live traffic could not be retrieved right now. Try again later.');
     const plan: Plan = {
       mode, from, to, geometry, distanceKm: route?.distanceKm, baseMinutes: route?.baseMinutes,
       roads: roads.length ? roads : samples.map(s => s.road), samples, hourly: profile.hourly, windows: profile.windows, daySupported: profile.daySupported,
