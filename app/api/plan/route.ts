@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     if (!roads.length && !samples.length) notes.push('No sampled road was found nearby. Try a numbered road and nearby town.');
     if (roads.length && !samples.length) notes.push('No nearby hourly count point was available for this road. Try a road number or add a nearby town.');
     if (profile.profileSource === 'gb-2025') notes.push('These times use the 2025 Great Britain day-of-week traffic pattern across all roads. They are not measured traffic for this particular road or journey.');
-    if (samples.some(s => s.year < 2021)) notes.push('Some nearby counts are older; use these patterns with caution.');
+    if (profile.profileSource === 'local-weekday' && samples.some(s => s.year < 2021)) notes.push('Some nearby counts are older; use these patterns with caution.');
     if (bakeries.status === 'rejected' && includeGreggs) notes.push('Greggs locations could not be checked right now.');
     if (key && !liveSamples.length) notes.push('Live traffic could not be retrieved right now. Try again later.');
     const plan: Plan = {
