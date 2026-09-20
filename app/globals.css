@@ -210,6 +210,18 @@ input[type="date"] { color-scheme: light; }
 .result-sources { color: #6b818a; font-size: 12px; line-height: 1.65; margin: 20px 2px 8px; }
 .result-sources a { color: #315e6a; text-decoration: underline; text-underline-offset: 2px; }
 
+.selected-stop { margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; border: 1px solid #98b68c; background: #eaf6d9; color: #173548; display: flex; justify-content: space-between; align-items: center; gap: 9px; }
+.selected-stop > div { min-width: 0; display: flex; align-items: flex-start; gap: 8px; font-size: 13px; font-weight: 700; }
+.selected-stop span { min-width: 0; overflow-wrap: anywhere; }
+.selected-stop small { display: block; font-weight: 400; margin-top: 2px; }
+.selected-stop button { flex-shrink: 0; border: 0; border-radius: 7px; padding: 8px; background: #d3e9b0; font-size: 12px; font-weight: 700; cursor: pointer; }
+.shop-stop { flex-shrink: 0; border: 1px solid #9fbd80; border-radius: 8px; background: #eaf6d9; color: #1b3e38; padding: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.shop-stop:hover, .selected-stop button:hover { background: #dbf0bd; }
+.shop-stop:disabled { opacity: .7; cursor: default; }
+.theme-night .selected-stop, .theme-night .shop-stop { background: #345342; border-color: #789c72; color: #f1f9e8; }
+.theme-night .selected-stop button { color: #eef8e8; background: #46664e; }
+.theme-night .shop-stop:hover, .theme-night .selected-stop button:hover { background: #506e54; }
+@media (max-width: 580px) { .shop { flex-wrap: wrap; } .shop-copy { flex-basis: calc(100% - 60px); } .shop-stop { margin-left: 49px; } }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #cbdcd6; border-radius: 9px; background: #f4f8f4; color: #183a4a; font-size: 13px; font-weight: 700; padding: 9px 11px; min-width: 80px; cursor: pointer; }
 .theme-toggle:hover { background: #e7f0e5; }
 .theme-night { background: #101e2a; color: #edf4f1; color-scheme: dark; }
