@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { Plan, Point } from '@/lib/traffic';
+import type { Plan, Point, Stop } from '@/lib/traffic';
 
 function nextWeekday(): string {
   const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -27,6 +27,15 @@ function mercator(point: Point, zoom: number) {
     x: (point[0] + 180) / 360 * size,
     y: (1 - Math.log(Math.tan(latitude) + 1 / Math.cos(latitude)) / Math.PI) / 2 * size,
   };
+}
+
+function googleDirections(plan: Plan, via?: Point) {
+  if (!plan.to) return '';
+  const pair = (p: Point) => p[1] + ',' + p[0];
+  const params = new URLSearchParams({ api: '1', origin: pair(plan.from.point), destination: pair(plan.to.point), travelmode: 'driving' });
+  const waypoint = via || plan.stop?.point;
+  if (waypoint) params.set('waypoints', pair(waypoint));
+  return 'https://www.google.com/maps/dir/?' + params.toString();
 }
 
 function MapSketch({ plan }: { plan: Plan }) {
@@ -80,7 +89,7 @@ function MapSketch({ plan }: { plan: Plan }) {
   return <div className="map-frame">
     <div className="map-head"><span><Route size={17} /> {plan.to ? 'Your route' : 'Road area'}</span><span>Street map</span></div>
     <div className="map-canvas" ref={frame}>
-      <svg viewBox={'0 0 ' + width + ' ' + height} role="img" aria-label={plan.to ? 'Street map of ' + plan.from.label + ' to ' + plan.to.label + ', with nearby Greggs' : 'Street map around ' + plan.from.label} onPointerDown={event => {
+      <svg viewBox={'0 0 ' + width + ' ' + height} role="img" aria-label={plan.to ? 'Street map of ' + plan.from.label + (plan.stop ? ' via ' + plan.stop.name : '') + ' to ' + plan.to.label + ', with nearby Greggs' : 'Street map around ' + plan.from.label} onPointerDown={event => {
         if ((event.target as Element).closest('a')) return;
         drag.current = { x: event.clientX, y: event.clientY, left: pan.x, top: pan.y };
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -97,7 +106,7 @@ function MapSketch({ plan }: { plan: Plan }) {
         {geometry.length > 1 && <><polyline points={path} fill="none" stroke="#183747" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity=".9" /><polyline points={path} fill="none" stroke="#d2f386" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></>}
         {plan.greggs.map(shop => {
           const p = position(shop.point);
-          return <a key={shop.id} href={'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(shop.point[1] + ',' + shop.point[0])} target="_blank" rel="noopener noreferrer" aria-label={'Open ' + shop.name + ' in maps'}><circle cx={p.x} cy={p.y} r="12" fill="#ffbc53" stroke="#173548" strokeWidth="3" /><circle cx={p.x} cy={p.y} r="3" fill="#173548" /></a>;
+          return <a key={shop.id} href={plan.to ? googleDirections(plan, shop.point) : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(shop.point[1] + ',' + shop.point[0])} target="_blank" rel="noopener noreferrer" aria-label={plan.to ? 'Open full journey via ' + shop.name + ' in Google Maps' : 'Open ' + shop.name + ' in maps'}><circle cx={p.x} cy={p.y} r="12" fill="#ffbc53" stroke="#173548" strokeWidth="3" /><circle cx={p.x} cy={p.y} r="3" fill="#173548" /></a>;
         })}
         {end && <><circle cx={end.x} cy={end.y} r="13" fill="white" stroke="#173548" strokeWidth="4" /><circle cx={end.x} cy={end.y} r="5" fill="#173548" /></>}
         <circle cx={start.x} cy={start.y} r="13" fill="#d2f386" stroke="#173548" strokeWidth="4" /><circle cx={start.x} cy={start.y} r="4" fill="#173548" />
@@ -147,15 +156,18 @@ export default function Home() {
   const [road, setRoad] = useState('A189 near Blyth');
   const [date, setDate] = useState(nextWeekday);
   const [showGreggs, setShowGreggs] = useState(true);
+  const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function search(event?: FormEvent) {
+  async function search(event?: FormEvent, stopOverride?: Stop | null) {
     event?.preventDefault();
+    const stop = stopOverride === undefined ? selectedStop : stopOverride;
+    if (stopOverride !== undefined) setSelectedStop(stopOverride);
     setLoading(true); setError(''); setPlan(null);
     try {
-      const res = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, from, to, road, date, showGreggs }) });
+      const res = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, from, to, road, date, showGreggs, stop: mode === 'journey' ? stop : null }) });
       const data = await res.json() as Plan & { error?: string };
       if (!res.ok) throw new Error(data.error && !data.error.toLowerCase().startsWith('internal error') ? data.error : 'The road data could not be checked right now. Please try again.');
       setPlan(data as Plan);
@@ -167,7 +179,7 @@ export default function Home() {
   const usualNow = plan?.hourly.find(h => h.hour === nowHour);
   const liveAvg = plan?.live.length ? Math.round(plan.live.reduce((s, item) => s + item.currentSpeed, 0) / plan.live.length) : null;
   const freeAvg = plan?.live.length ? Math.round(plan.live.reduce((s, item) => s + item.freeFlowSpeed, 0) / plan.live.length) : null;
-  const directions = plan?.to ? 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(plan.from.point[1] + ',' + plan.from.point[0]) + '&destination=' + encodeURIComponent(plan.to.point[1] + ',' + plan.to.point[0]) + '&travelmode=driving' : '';
+  const directions = plan?.to ? googleDirections(plan) : '';
 
   return <main className={night ? "site-shell theme-night" : "site-shell"}>
     <header className="topbar"><div className="brand"><span className="brand-symbol"><Navigation size={18} strokeWidth={2.5} /></span><span>quietroad<span className="brand-period">.</span></span></div><div className="topbar-right"><span>UK road planner</span><span className="topbar-badge">BETA</span><button className="theme-toggle" type="button" aria-label={night ? "Switch to day mode" : "Switch to night mode"} aria-pressed={night} onClick={toggleTheme}>{night ? <><Sun size={16} /> Day</> : <><Moon size={16} /> Night</>}</button></div></header>
@@ -175,19 +187,19 @@ export default function Home() {
       <aside className="planner" aria-label="Plan a road journey">
         <p className="eyebrow light">CHOOSE WHEN TO GO</p><h1>Find the <em>quieter</em> way.</h1>
         <p className="intro">Check a road, postcode or journey. See four quieter daytime windows and Greggs nearby.</p>
-        <Tabs value={mode} onValueChange={v => { setMode(v as 'journey' | 'area'); setPlan(null); setError(''); }} className="mode-tabs">
+        <Tabs value={mode} onValueChange={v => { setMode(v as 'journey' | 'area'); setPlan(null); setSelectedStop(null); setError(''); }} className="mode-tabs">
           <TabsList className="mode-list"><TabsTrigger value="journey"><Route size={17} />Journey</TabsTrigger><TabsTrigger value="area"><MapPin size={17} />Road / postcode</TabsTrigger></TabsList>
           <form onSubmit={search}>
             <TabsContent value="journey"><div className="form-field"><label htmlFor="from">Starting point</label><div className="input-wrap"><MapPin size={18} /><Input id="from" value={from} onChange={e => setFrom(e.target.value)} placeholder="Place or postcode" required maxLength={120} /></div></div>
               <div className="journey-connector" aria-hidden="true"><span /></div>
-              <div className="form-field"><label htmlFor="to">Destination</label><div className="input-wrap"><MapPin size={18} /><Input id="to" value={to} onChange={e => setTo(e.target.value)} placeholder="Place or postcode" required maxLength={120} /></div></div></TabsContent>
+              <div className="form-field"><label htmlFor="to">Destination</label><div className="input-wrap"><MapPin size={18} /><Input id="to" value={to} onChange={e => setTo(e.target.value)} placeholder="Place or postcode" required maxLength={120} /></div></div>{selectedStop && <div className="selected-stop"><div><Coffee size={16} /><span>Via {selectedStop.name}<small>{selectedStop.address}</small></span></div><button type="button" onClick={() => void search(undefined, null)} disabled={loading}>Remove stop</button></div>}</TabsContent>
             <TabsContent value="area"><div className="form-field"><label htmlFor="road">Road name or postcode</label><div className="input-wrap"><Search size={18} /><Input id="road" value={road} onChange={e => setRoad(e.target.value)} placeholder="e.g. A189 near Blyth or NE24 4SG" required maxLength={120} /></div></div><p className="form-hint">For a long road, add a town to choose the right stretch.</p></TabsContent>
             <div className="form-field date-field"><label htmlFor="date">Day of travel</label><div className="input-wrap"><Clock3 size={18} /><Input id="date" type="date" value={date} onChange={e => setDate(e.target.value)} required /></div></div>
             <label className="check-row" htmlFor="greggs"><Checkbox id="greggs" checked={showGreggs} onCheckedChange={v => setShowGreggs(v === true)} /><span><strong>Show Greggs</strong><small>Near this road or journey</small></span></label>
             <Button type="submit" size="lg" className="plan-button" disabled={loading}>{loading ? 'Checking road data…' : 'Find quieter times'}<ArrowRight size={18} /></Button>
           </form>
         </Tabs>
-        <div className="planner-foot"><ShieldCheck size={18} /><p>Recommendations use actual published hourly road counts where available. Live speeds require a traffic key.</p></div>
+        <div className="planner-foot"><ShieldCheck size={18} /><p>Recommendations use actual published hourly road counts where available. Live speeds are point samples, not a journey time forecast.</p></div>
       </aside>
 
       <div className="results" aria-live="polite">
@@ -195,7 +207,7 @@ export default function Home() {
         {loading && <div className="loading-panel" role="status"><div className="loading-orbit"><Navigation size={25} /></div><h2>Checking the route</h2><p>Finding the right road count points and nearby Greggs. This may take a moment.</p><div className="loading-line" /></div>}
         {error && <div className="error-panel" role="alert"><Info size={22} /><div><h2>That search needs another go</h2><p>{error}</p></div></div>}
         {plan && <>
-          <div className="result-heading"><div><p className="eyebrow">YOUR ROAD REPORT</p><h2>{plan.from.label}{plan.to ? <><span className="title-arrow"> → </span>{plan.to.label}</> : ''}</h2><p>{plan.mode === 'journey' ? (plan.distanceKm?.toFixed(1) || '—') + ' km route · about ' + Math.round(plan.baseMinutes || 0) + ' min without live traffic' : 'Area around this location'}{plan.roads.length ? ' · ' + plan.roads.join(' / ') : ''}</p></div>{directions && <a className="maps-link" href={directions} target="_blank" rel="noopener noreferrer">Open directions <ExternalLink size={16} /></a>}</div>
+          <div className="result-heading"><div><p className="eyebrow">YOUR ROAD REPORT</p><h2>{plan.from.label}{plan.stop ? <><span className="title-arrow"> → </span>{plan.stop.name}</> : ''}{plan.to ? <><span className="title-arrow"> → </span>{plan.to.label}</> : ''}</h2><p>{plan.mode === 'journey' ? (plan.distanceKm?.toFixed(1) || '—') + ' km route · about ' + Math.round(plan.baseMinutes || 0) + ' min without live traffic' : 'Area around this location'}{plan.roads.length ? ' · ' + plan.roads.join(' / ') : ''}</p></div>{directions && <a className="maps-link" href={directions} target="_blank" rel="noopener noreferrer">{plan.stop ? 'Open trip via Greggs' : 'Open directions'} <ExternalLink size={16} /></a>}</div>
           <div className="result-top">
             <section className="surface times-panel" aria-labelledby="times-heading"><div className="section-head"><div><p className="eyebrow">FOUR TIME WINDOWS</p><h3 id="times-heading">Quieter times to go</h3></div><span className="time-badge">{new Date(plan.requestedDate + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</span></div>
               {plan.windows.length ? <><div className="window-list">{plan.windows.map((w, i) => <div className={'window-card ' + (i === 0 ? 'best' : '')} key={w.start}><span className="window-rank">{String(i + 1).padStart(2, '0')}</span><div><strong>{hourLabel(w.start)}–{hourLabel(w.end)}</strong><small>{i === 0 ? 'Quietest measured hour' : 'Among the four quieter hours'}</small></div><div className="window-meter"><b>{w.index}%</b><span>of peak</span></div></div>)}</div><p className="tiny-note">Based on historical sample counts. Lower % means fewer vehicles than the busiest measured hour, not a predicted journey time.</p></> : <div className="window-empty"><Info size={24} /><p>{!plan.daySupported ? 'Weekend counts are not available in this dataset. Select a weekday to see four comparable windows.' : 'There are no suitable nearby hourly counts for this search. Try a numbered road and town.'}</p></div>}
@@ -204,7 +216,7 @@ export default function Home() {
           </div>
           <Profile plan={plan} />
           {plan.notes.length > 0 && <div className="notes-panel">{plan.notes.map(note => <p key={note}><Info size={17} />{note}</p>)}</div>}
-          {plan.greggsStatus !== 'not-requested' && <section className="surface greggs-panel" aria-labelledby="greggs-heading"><div className="section-head"><div><p className="eyebrow">A STOP ON THE WAY</p><h2 id="greggs-heading"><Coffee size={23} />Greggs {plan.to ? 'near your route' : 'near this spot'}</h2></div><span className="small-chip">{plan.greggs.length} found</span></div>{plan.greggsStatus === 'unavailable' ? <p className="subtle">Greggs locations could not be checked right now. Try this search again later.</p> : plan.greggs.length ? <><div className="shop-list">{plan.greggs.map(shop => <div className="shop" key={shop.id}><div className="shop-icon"><Coffee size={18} /></div><div className="shop-copy"><strong>{shop.name}</strong><span>{shop.address}</span><small>{shop.distanceMetres < 1000 ? shop.distanceMetres + ' m' : (shop.distanceMetres / 1000).toFixed(1) + ' km'} from {plan.to ? 'route' : 'spot'} (straight line)</small></div><a href={'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(shop.point[1] + ',' + shop.point[0])} target="_blank" rel="noopener noreferrer" aria-label={'Open ' + shop.name + ' in maps'}><ExternalLink size={18} /></a></div>)}</div><p className="tiny-note">Mapped locations may be missing or out of date. Check opening hours before travelling.</p></> : <p className="subtle">No mapped Greggs was found within {plan.to ? 'about 800 m of this route' : 'about 2.5 km of this spot'}.</p>}</section>}
+          {plan.greggsStatus !== 'not-requested' && <section className="surface greggs-panel" aria-labelledby="greggs-heading"><div className="section-head"><div><p className="eyebrow">A STOP ON THE WAY</p><h2 id="greggs-heading"><Coffee size={23} />Greggs {plan.to ? 'near your route' : 'near this spot'}</h2></div><span className="small-chip">{plan.greggs.length} found</span></div>{plan.greggsStatus === 'unavailable' ? <p className="subtle">Greggs locations could not be checked right now. Try this search again later.</p> : plan.greggs.length ? <><div className="shop-list">{plan.greggs.map(shop => <div className="shop" key={shop.id}><div className="shop-icon"><Coffee size={18} /></div><div className="shop-copy"><strong>{shop.name}</strong><span>{shop.address}</span><small>{shop.distanceMetres < 1000 ? shop.distanceMetres + ' m' : (shop.distanceMetres / 1000).toFixed(1) + ' km'} from {plan.to ? 'route' : 'spot'} (straight line)</small></div>{plan.to && <button className="shop-stop" type="button" onClick={() => void search(undefined, shop)} disabled={loading || plan.stop?.id === shop.id}>{plan.stop?.id === shop.id ? 'Current stop' : 'Use as stop'}</button>}<a href={plan.to ? googleDirections(plan, shop.point) : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(shop.point[1] + ',' + shop.point[0])} target="_blank" rel="noopener noreferrer" aria-label={plan.to ? 'Open full journey via ' + shop.name + ' in Google Maps' : 'Open ' + shop.name + ' in maps'} title={plan.to ? 'Full trip in Google Maps' : 'Open in Google Maps'}><ExternalLink size={18} /></a></div>)}</div><p className="tiny-note">{plan.to ? 'Use as stop updates QuietRoad’s route and sampled traffic; the map link opens the full trip via that Greggs. ' : ''}Mapped locations may be missing or out of date. Check opening hours before travelling.</p></> : <p className="subtle">No mapped Greggs was found within {plan.to ? 'about 800 m of this route' : 'about 2.5 km of this spot'}.</p>}</section>}
           <footer className="result-sources">Traffic counts: <a href="https://roadtraffic.dft.gov.uk/downloads" target="_blank" rel="noreferrer">Department for Transport</a>. Routing and Greggs: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a> via OSRM / Photon / Overpass. {plan.liveStatus === 'available' ? 'Live speed: TomTom. ' : ''}<a href="https://nationalhighways.co.uk/roads-and-travel/live-travel-updates/" target="_blank" rel="noreferrer">Check current incidents with National Highways</a>.</footer>
         </>}
       </div>
