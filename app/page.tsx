@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, Clock3, Coffee, ExternalLink, Info, MapPin, Navigation, Route, Search, ShieldCheck, } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -20,37 +20,96 @@ function nextWeekday(): string {
 
 function hourLabel(hour: number) { return String(hour).padStart(2, '0') + ':00'; }
 
+function mercator(point: Point, zoom: number) {
+  const size = 256 * 2 ** zoom;
+  const latitude = Math.max(-85, Math.min(85, point[1])) * Math.PI / 180;
+  return {
+    x: (point[0] + 180) / 360 * size,
+    y: (1 - Math.log(Math.tan(latitude) + 1 / Math.cos(latitude)) / Math.PI) / 2 * size,
+  };
+}
+
 function MapSketch({ plan }: { plan: Plan }) {
-  const points = plan.geometry.length ? plan.geometry : [plan.from.point];
-  const all = [...points, ...plan.greggs.map(item => item.point)];
-  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
-  for (const [lon, lat] of all) {
-    minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon);
-    minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+  const frame = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const [width, setWidth] = useState(600);
+  const [zoomDelta, setZoomDelta] = useState(0);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const height = 340;
+
+  useEffect(() => {
+    if (!frame.current) return;
+    const observer = new ResizeObserver(entries => setWidth(Math.max(280, entries[0].contentRect.width)));
+    observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const geometry = plan.geometry.length ? plan.geometry : [plan.from.point];
+  const all = [...geometry, ...plan.greggs.map(shop => shop.point)];
+  const atZero = all.map(point => mercator(point, 0));
+  const xs = atZero.map(p => p.x), ys = atZero.map(p => p.y);
+  const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+  const fit = Math.floor(Math.log2(Math.min((width - 75) / Math.max(1, right - left), (height - 75) / Math.max(1, bottom - top))));
+  const zoom = Math.max(5, Math.min(16, (Number.isFinite(fit) ? fit : 14) + zoomDelta));
+  const factor = 2 ** zoom;
+  const centre = { x: (left + right) / 2 * factor - pan.x, y: (top + bottom) / 2 * factor - pan.y };
+  const position = (point: Point) => {
+    const projected = mercator(point, zoom);
+    return { x: projected.x - centre.x + width / 2, y: projected.y - centre.y + height / 2 };
+  };
+  const tileLeft = Math.floor((centre.x - width / 2) / 256);
+  const tileRight = Math.floor((centre.x + width / 2) / 256);
+  const tileTop = Math.floor((centre.y - height / 2) / 256);
+  const tileBottom = Math.floor((centre.y + height / 2) / 256);
+  const tiles: { x: number; y: number; screenX: number; screenY: number }[] = [];
+  const count = 2 ** zoom;
+  for (let x = tileLeft; x <= tileRight; x++) for (let y = tileTop; y <= tileBottom; y++) {
+    if (y >= 0 && y < count) tiles.push({
+      x: (x + count) % count, y,
+      screenX: x * 256 - centre.x + width / 2,
+      screenY: y * 256 - centre.y + height / 2,
+    });
   }
-  const cos = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
-  const spanX = Math.max((maxLon - minLon) * cos, 0.012);
-  const spanY = Math.max(maxLat - minLat, 0.012);
-  const scale = Math.min(520 / spanX, 288 / spanY);
-  const ox = (600 - spanX * scale) / 2;
-  const oy = (380 - spanY * scale) / 2;
-  const xy = (p: Point) => ({ x: ox + (p[0] - minLon) * cos * scale, y: 380 - oy - (p[1] - minLat) * scale });
-  const decimated = points.filter((_, i) => i % Math.max(1, Math.floor(points.length / 240)) === 0);
-  if (decimated[decimated.length - 1] !== points[points.length - 1]) decimated.push(points[points.length - 1]);
-  const polyline = decimated.map(p => { const c = xy(p); return c.x.toFixed(1) + ',' + c.y.toFixed(1); }).join(' ');
-  const start = xy(plan.from.point);
-  const end = plan.to ? xy(plan.to.point) : null;
+  const interval = Math.max(1, Math.floor(geometry.length / 240));
+  const line = geometry.filter((_, index) => index % interval === 0);
+  if (line[line.length - 1] !== geometry[geometry.length - 1]) line.push(geometry[geometry.length - 1]);
+  const path = line.map(point => { const p = position(point); return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
+  const start = position(plan.from.point);
+  const end = plan.to ? position(plan.to.point) : null;
+
   return <div className="map-frame">
-    <div className="map-head"><span><Route size={17} /> {plan.mode === 'journey' ? 'Your route' : 'Road area'}</span><span>OpenStreetMap route</span></div>
-    <svg viewBox="0 0 600 380" role="img" aria-label={plan.to ? 'Route shape from ' + plan.from.label + ' to ' + plan.to.label + ', with Greggs markers' : 'Map position for ' + plan.from.label}>
-      <defs><pattern id="grid" width="38" height="38" patternUnits="userSpaceOnUse"><path d="M 38 0 L 0 0 0 38" fill="none" stroke="#30465a" strokeWidth="1" /></pattern></defs>
-      <rect width="600" height="380" fill="#102a3b" /><rect width="600" height="380" fill="url(#grid)" opacity=".48" />
-      {points.length > 1 && <><polyline points={polyline} fill="none" stroke="#203f4f" strokeWidth="16" strokeLinecap="round" strokeLinejoin="round" /><polyline points={polyline} fill="none" stroke="#c1ea70" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></>}
-      {plan.greggs.map(shop => { const p = xy(shop.point); return <g key={shop.id}><circle cx={p.x} cy={p.y} r="12" fill="#f8b94b" stroke="#102a3b" strokeWidth="3" /><circle cx={p.x} cy={p.y} r="3" fill="#152b3c" /></g>; })}
-      {end && <><circle cx={end.x} cy={end.y} r="13" fill="#fff" stroke="#122b3e" strokeWidth="4" /><circle cx={end.x} cy={end.y} r="5" fill="#152b3c" /></>}
-      <circle cx={start.x} cy={start.y} r="14" fill="#c1ea70" stroke="#122b3e" strokeWidth="4" /><circle cx={start.x} cy={start.y} r="4" fill="#122b3e" />
-    </svg>
-    <div className="map-foot"><span><i className="legend-route" />Route</span>{plan.greggs.length > 0 && <span><i className="legend-shop" />Greggs near route</span>}<span>Shape only · not turn-by-turn</span></div>
+    <div className="map-head"><span><Route size={17} /> {plan.to ? 'Your route' : 'Road area'}</span><span>Street map</span></div>
+    <div className="map-canvas" ref={frame}>
+      <svg viewBox={'0 0 ' + width + ' ' + height} role="img" aria-label={plan.to ? 'Street map of ' + plan.from.label + ' to ' + plan.to.label + ', with nearby Greggs' : 'Street map around ' + plan.from.label} onPointerDown={event => {
+        if ((event.target as Element).closest('a')) return;
+        drag.current = { x: event.clientX, y: event.clientY, left: pan.x, top: pan.y };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }} onPointerMove={event => {
+        if (!drag.current) return;
+        const ratio = width / event.currentTarget.getBoundingClientRect().width;
+        setPan({ x: drag.current.left + (event.clientX - drag.current.x) * ratio, y: drag.current.top + (event.clientY - drag.current.y) * ratio });
+      }} onPointerUp={event => {
+        drag.current = null;
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      }} onPointerCancel={() => { drag.current = null; }}>
+        <rect width={width} height={height} fill="#e4eee7" />
+        {tiles.map(tile => <image key={zoom + '-' + tile.x + '-' + tile.y} href={'https://tile.openstreetmap.org/' + zoom + '/' + tile.x + '/' + tile.y + '.png'} x={tile.screenX} y={tile.screenY} width="256" height="256" />)}
+        {geometry.length > 1 && <><polyline points={path} fill="none" stroke="#183747" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity=".9" /><polyline points={path} fill="none" stroke="#d2f386" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></>}
+        {plan.greggs.map(shop => {
+          const p = position(shop.point);
+          return <a key={shop.id} href={'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(shop.point[1] + ',' + shop.point[0])} target="_blank" rel="noopener noreferrer" aria-label={'Open ' + shop.name + ' in maps'}><circle cx={p.x} cy={p.y} r="12" fill="#ffbc53" stroke="#173548" strokeWidth="3" /><circle cx={p.x} cy={p.y} r="3" fill="#173548" /></a>;
+        })}
+        {end && <><circle cx={end.x} cy={end.y} r="13" fill="white" stroke="#173548" strokeWidth="4" /><circle cx={end.x} cy={end.y} r="5" fill="#173548" /></>}
+        <circle cx={start.x} cy={start.y} r="13" fill="#d2f386" stroke="#173548" strokeWidth="4" /><circle cx={start.x} cy={start.y} r="4" fill="#173548" />
+      </svg>
+      <div className="map-controls">
+        <button type="button" aria-label="Zoom in on map" onClick={() => setZoomDelta(value => Math.min(value + 1, 5))}>+</button>
+        <button type="button" aria-label="Zoom out of map" onClick={() => setZoomDelta(value => Math.max(value - 1, -5))}>−</button>
+        <button type="button" aria-label="Fit route on map" onClick={() => { setZoomDelta(0); setPan({ x: 0, y: 0 }); }}>⌖</button>
+      </div>
+      <a className="map-attribution" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+    </div>
+    <div className="map-foot"><span><i className="legend-route" />{plan.to ? 'Route' : 'Search area'}</span>{plan.greggs.length > 0 && <span><i className="legend-shop" />Greggs near {plan.to ? 'route' : 'spot'}</span>}<span>Drag to move · + / − to zoom</span></div>
   </div>;
 }
 
@@ -132,7 +191,7 @@ export default function Home() {
             <section className="surface times-panel" aria-labelledby="times-heading"><div className="section-head"><div><p className="eyebrow">FOUR TIME WINDOWS</p><h3 id="times-heading">Quieter times to go</h3></div><span className="time-badge">{new Date(plan.requestedDate + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</span></div>
               {plan.windows.length ? <><div className="window-list">{plan.windows.map((w, i) => <div className={'window-card ' + (i === 0 ? 'best' : '')} key={w.start}><span className="window-rank">{String(i + 1).padStart(2, '0')}</span><div><strong>{hourLabel(w.start)}–{hourLabel(w.end)}</strong><small>{i === 0 ? 'Quietest measured hour' : 'Among the four quieter hours'}</small></div><div className="window-meter"><b>{w.index}%</b><span>of peak</span></div></div>)}</div><p className="tiny-note">Based on historical sample counts. Lower % means fewer vehicles than the busiest measured hour, not a predicted journey time.</p></> : <div className="window-empty"><Info size={24} /><p>{!plan.daySupported ? 'Weekend counts are not available in this dataset. Select a weekday to see four comparable windows.' : 'There are no suitable nearby hourly counts for this search. Try a numbered road and town.'}</p></div>}
             </section>
-            <div className="side-stack"><MapSketch plan={plan} /><div className="live-card"><div><span className={'status-light ' + (plan.liveStatus === 'available' ? 'active' : '')} /><strong>{plan.liveStatus === 'available' ? 'Live speed samples' : 'Live traffic'}</strong></div>{plan.liveStatus === 'available' ? <p>{liveAvg} mph now vs {freeAvg} mph in free flow, from {plan.live.length} sampled road {plan.live.length === 1 ? 'segment' : 'segments'}.{plan.live.some(s => s.closure) ? ' A sampled segment is reported closed.' : ''}</p> : <p>{plan.liveStatus === 'unavailable' ? 'Live traffic unavailable right now. Try again later.' : 'Live traffic is not configured yet.'}{usualNow ? ' At this hour the historical count is ' + usualNow.index + '% of the measured peak.' : ''}</p>}</div></div>
+            <div className="side-stack"><MapSketch key={plan.from.label + '|' + (plan.to?.label || '')} plan={plan} /><div className="live-card"><div><span className={'status-light ' + (plan.liveStatus === 'available' ? 'active' : '')} /><strong>{plan.liveStatus === 'available' ? 'Live speed samples' : 'Live traffic'}</strong></div>{plan.liveStatus === 'available' ? <p>{liveAvg} mph now vs {freeAvg} mph in free flow, from {plan.live.length} sampled road {plan.live.length === 1 ? 'segment' : 'segments'}.{plan.live.some(s => s.closure) ? ' A sampled segment is reported closed.' : ''}</p> : <p>{plan.liveStatus === 'unavailable' ? 'Live traffic unavailable right now. Try again later.' : 'Live traffic is not configured yet.'}{usualNow ? ' At this hour the historical count is ' + usualNow.index + '% of the measured peak.' : ''}</p>}</div></div>
           </div>
           <Profile plan={plan} />
           {plan.notes.length > 0 && <div className="notes-panel">{plan.notes.map(note => <p key={note}><Info size={17} />{note}</p>)}</div>}
