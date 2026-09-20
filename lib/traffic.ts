@@ -11,11 +11,13 @@ export type CountSample = {
   hours: { hour: number; vehicles: number }[];
 };
 export type Greggs = { id: string; name: string; address: string; point: Point; distanceMetres: number; routeKm?: number };
+export type Stop = Pick<Greggs, 'id' | 'name' | 'address' | 'point'>;
 export type LiveSample = { currentSpeed: number; freeFlowSpeed: number; confidence: number; closure: boolean; point: Point };
 export type Plan = {
   mode: 'journey' | 'area';
   from: Place;
   to?: Place;
+  stop?: Stop;
   distanceKm?: number;
   baseMinutes?: number;
   geometry: Point[];
@@ -100,9 +102,9 @@ export async function findPlace(input: string): Promise<Place> {
 }
 
 type RouteResponse = { code: string; routes?: { distance: number; duration: number; geometry: { coordinates: Point[] }; legs: { steps: { ref?: string; name?: string; distance: number }[] }[] }[] };
-export async function findRoute(a: Point, b: Point) {
+export async function findRoute(a: Point, b: Point, via?: Point) {
   const pair = (p: Point) => p[0].toFixed(6) + ',' + p[1].toFixed(6);
-  const data = await getJson<RouteResponse>('https://router.project-osrm.org/route/v1/driving/' + pair(a) + ';' + pair(b) + '?overview=full&geometries=geojson&steps=true', 3600000, 18000);
+  const data = await getJson<RouteResponse>('https://router.project-osrm.org/route/v1/driving/' + [a, ...(via ? [via] : []), b].map(pair).join(';') + '?overview=full&geometries=geojson&steps=true', 3600000, 18000);
   if (data.code !== 'Ok' || !data.routes?.[0]) throw new Error('No drivable route was found between those places.');
   const route = data.routes[0];
   const sums = new Map<string, number>();
