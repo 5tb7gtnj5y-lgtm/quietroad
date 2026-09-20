@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "vinext build",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next",
     "dev:vinext": "vinext dev --port 3001",
