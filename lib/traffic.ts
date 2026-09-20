@@ -232,7 +232,7 @@ function reduceLine(line: Point[], maxPoints: number): Point[] {
   return Array.from({ length: maxPoints }, (_, i) => line[Math.round(i * (line.length - 1) / (maxPoints - 1))]);
 }
 
-export async function findGreggs(line: Point[], journey: boolean): Promise<Greggs[]> {
+async function findGreggsFromOverpass(line: Point[], journey: boolean): Promise<Greggs[]> {
   const points = journey ? reduceLine(line, 42) : [line[0]];
   const location = points.map(p => p[1].toFixed(5) + ',' + p[0].toFixed(5)).join(',');
   const around = journey ? '(around:800,' + location + ')' : '(around:2500,' + location + ')';
@@ -280,6 +280,78 @@ export async function findGreggs(line: Point[], journey: boolean): Promise<Gregg
     values.push({ id, name: tags.name || 'Greggs', address: addr || tags['addr:postcode'] || 'Address not mapped', point: p, distanceMetres: Math.round(distance), routeKm: journey ? Math.round(nearestIndex / Math.max(1, path.length - 1) * 100) : undefined });
   }
   return values.sort((a, b) => journey ? (a.routeKm || 0) - (b.routeKm || 0) : a.distanceMetres - b.distanceMetres).slice(0, 18);
+}
+
+type FoodEstablishment = {
+  FHRSID: number;
+  BusinessName: string;
+  AddressLine1?: string;
+  AddressLine2?: string;
+  AddressLine3?: string;
+  AddressLine4?: string;
+  PostCode?: string;
+  geocode?: { latitude?: string | number; longitude?: string | number };
+};
+
+async function findGreggsFromFoodStandards(line: Point[], journey: boolean): Promise<Greggs[]> {
+  const path = reduceLine(line, 240);
+  const distanceKm = line.reduce((total, point, i) => i ? total + km(line[i - 1], point) : total, 0);
+  const points = journey ? reduceLine(line, Math.min(20, Math.max(2, Math.ceil(distanceKm / 3) + 1))) : [line[0]];
+  const responses = await Promise.allSettled(points.map(async point => {
+    const params = new URLSearchParams({
+      name: 'Greggs',
+      latitude: point[1].toFixed(5),
+      longitude: point[0].toFixed(5),
+      maxDistanceLimit: journey ? '3' : '2',
+      pageSize: '100',
+      sortOptionKey: 'distance',
+    });
+    const response = await fetch('https://api.ratings.food.gov.uk/Establishments?' + params, {
+      headers: { Accept: 'application/json', 'x-api-version': '2' },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error('Food Standards Agency returned ' + response.status);
+    const body = await response.json() as { establishments?: FoodEstablishment[] };
+    if (!Array.isArray(body.establishments)) throw new Error('Food Standards Agency returned no records');
+    return body.establishments;
+  }));
+  const successes = responses.filter((r): r is PromiseFulfilledResult<FoodEstablishment[]> => r.status === 'fulfilled');
+  if (!successes.length) throw new Error('Food Standards Agency unavailable');
+  const seen = new Set<number>();
+  const values: Greggs[] = [];
+  for (const { value: shops } of successes) for (const shop of shops) {
+    if (!/^Greggs\b/i.test(shop.BusinessName || '') || seen.has(shop.FHRSID)) continue;
+    seen.add(shop.FHRSID);
+    const lon = Number(shop.geocode?.longitude);
+    const lat = Number(shop.geocode?.latitude);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || !UK([lon, lat])) continue;
+    const point: Point = [lon, lat];
+    const distance = distanceToRoute(point, path) * 1000;
+    if (distance > (journey ? 950 : 2700)) continue;
+    let nearestIndex = 0; let nearestDistance = Infinity;
+    path.forEach((position, i) => {
+      const value = km(position, point);
+      if (value < nearestDistance) { nearestDistance = value; nearestIndex = i; }
+    });
+    const address = [shop.AddressLine1, shop.AddressLine2, shop.AddressLine3, shop.AddressLine4, shop.PostCode].filter(Boolean).join(', ');
+    values.push({
+      id: 'fsa/' + shop.FHRSID,
+      name: shop.BusinessName,
+      address: address || 'Address not listed',
+      point,
+      distanceMetres: Math.round(distance),
+      routeKm: journey ? Math.round(nearestIndex / Math.max(1, path.length - 1) * 100) : undefined,
+    });
+  }
+  return values.sort((a, b) => journey ? (a.routeKm || 0) - (b.routeKm || 0) : a.distanceMetres - b.distanceMetres).slice(0, 18);
+}
+
+export async function findGreggs(line: Point[], journey: boolean): Promise<Greggs[]> {
+  try {
+    return await findGreggsFromFoodStandards(line, journey);
+  } catch {
+    return findGreggsFromOverpass(line, journey);
+  }
 }
 
 export async function getLive(line: Point[], key: string): Promise<LiveSample[]> {
