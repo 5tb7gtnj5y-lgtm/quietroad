@@ -26,6 +26,7 @@ export type Plan = {
   hourly: { hour: number; index: number; vehicles?: number }[];
   windows: { start: number; end: number; index: number; vehicles?: number }[];
   daySupported: boolean;
+  profileSource: 'local-weekday' | 'gb-2025';
   requestedDate: string;
   live: LiveSample[];
   liveStatus: 'available' | 'not-connected' | 'unavailable';
@@ -208,11 +209,33 @@ export async function getSamples(roads: string[], line: Point[]): Promise<CountS
   return found.flatMap(v => v.status === 'fulfilled' && v.value ? [v.value] : []);
 }
 
+// DfT table TRA0307 (2025): average traffic index by day and hour, 07:00–19:00.
+// National automatic counter data. This is an all-roads pattern, not local roadside counts.
+// Source: https://www.gov.uk/government/statistical-data-sets/road-traffic-estimates-tra
+const GB_HOURLY_2025 = [
+  [38.5, 62.1, 104.5, 144.1, 166.0, 176.3, 170.1, 161.3, 156.2, 151.0, 132.9, 113.4], // Sunday
+  [162.7, 181.9, 144.8, 144.5, 150.8, 155.1, 154.9, 163.9, 183.9, 199.6, 193.7, 141.8],
+  [176.4, 195.9, 150.7, 139.9, 143.7, 149.4, 150.7, 163.4, 188.5, 209.8, 207.0, 154.4],
+  [171.7, 191.9, 148.8, 139.6, 144.3, 150.9, 152.6, 165.8, 189.5, 208.2, 205.4, 155.1],
+  [170.6, 192.3, 150.3, 143.4, 148.4, 154.9, 155.9, 168.2, 192.3, 209.8, 207.2, 160.3],
+  [152.0, 177.0, 150.3, 155.9, 167.0, 177.8, 179.7, 190.9, 208.1, 209.6, 196.8, 159.2],
+  [60.7, 100.9, 139.6, 169.5, 183.6, 186.2, 177.4, 166.3, 157.5, 154.4, 147.1, 124.4], // Saturday
+] as const;
+
 export function makeProfile(samples: CountSample[], date: string) {
   const dateValue = new Date(date + 'T12:00:00Z');
-  const daySupported = !Number.isNaN(dateValue.getTime()) && ![0, 6].includes(dateValue.getUTCDay());
-  if (!samples.length) return { daySupported, hourly: [], windows: [] };
+  const day = dateValue.getUTCDay();
   const hours = Array.from({ length: 12 }, (_, i) => i + 7);
+  // Manual roadside counts were collected on weekdays only. Weekend curves (and
+  // searches with no local count) use the measured national day-of-week pattern.
+  if (!samples.length || day === 0 || day === 6) {
+    const values = GB_HOURLY_2025[day];
+    const peak = Math.max(...values);
+    const hourly = hours.map((hour, i) => ({ hour, index: Math.round(values[i] / peak * 100) }));
+    const windows = [...hourly].sort((a, b) => a.index - b.index || a.hour - b.hour).slice(0, 4)
+      .map(h => ({ start: h.hour, end: h.hour + 1, index: h.index }));
+    return { daySupported: true, profileSource: 'gb-2025' as const, hourly, windows };
+  }
   const hourly = hours.map(hour => {
     const values = samples.map(sample => {
       const count = sample.hours.find(h => h.hour === hour)?.vehicles;
@@ -225,8 +248,8 @@ export function makeProfile(samples: CountSample[], date: string) {
   }).filter((v): v is { hour: number; ratio: number; vehicles: number | undefined } => v !== null);
   const peak = Math.max(...hourly.map(h => h.ratio));
   const profile = hourly.map(h => ({ hour: h.hour, index: Math.round(100 * h.ratio / peak), vehicles: h.vehicles }));
-  const windows = daySupported ? [...profile].sort((a, b) => a.index - b.index || a.hour - b.hour).slice(0, 4).map(h => ({ start: h.hour, end: h.hour + 1, index: h.index, vehicles: h.vehicles })) : [];
-  return { daySupported, hourly: profile, windows };
+  const windows = [...profile].sort((a, b) => a.index - b.index || a.hour - b.hour).slice(0, 4).map(h => ({ start: h.hour, end: h.hour + 1, index: h.index, vehicles: h.vehicles }));
+  return { daySupported: true, profileSource: 'local-weekday' as const, hourly: profile, windows };
 }
 
 function reduceLine(line: Point[], maxPoints: number): Point[] {
