@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, Clock3, Coffee, ExternalLink, Info, MapPin, Navigation, Route, Search, ShieldCheck, } from 'lucide-react';
+import { ArrowRight, Clock3, Coffee, ExternalLink, Info, MapPin, Navigation, Route, Search, ShieldCheck, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -132,6 +132,15 @@ function Profile({ plan }: { plan: Plan }) {
 }
 
 export default function Home() {
+  const [night, setNight] = useState(false);
+  useEffect(() => {
+    try { setNight(window.localStorage.getItem('quietroad-theme') === 'night'); } catch { /* Private browsing can disable storage. */ }
+  }, []);
+  const toggleTheme = () => {
+    const next = !night;
+    setNight(next);
+    try { window.localStorage.setItem('quietroad-theme', next ? 'night' : 'day'); } catch { /* Theme still works for this visit. */ }
+  };
   const [mode, setMode] = useState<'journey' | 'area'>('journey');
   const [from, setFrom] = useState('Blyth, Northumberland');
   const [to, setTo] = useState('Newcastle upon Tyne');
@@ -160,8 +169,8 @@ export default function Home() {
   const freeAvg = plan?.live.length ? Math.round(plan.live.reduce((s, item) => s + item.freeFlowSpeed, 0) / plan.live.length) : null;
   const directions = plan?.to ? 'https://www.google.com/maps/dir/?api=1&origin=' + encodeURIComponent(plan.from.point[1] + ',' + plan.from.point[0]) + '&destination=' + encodeURIComponent(plan.to.point[1] + ',' + plan.to.point[0]) + '&travelmode=driving' : '';
 
-  return <main className="site-shell">
-    <header className="topbar"><div className="brand"><span className="brand-symbol"><Navigation size={18} strokeWidth={2.5} /></span><span>quietroad<span className="brand-period">.</span></span></div><div className="topbar-right"><span>UK road planner</span><span className="topbar-badge">BETA</span></div></header>
+  return <main className={night ? "site-shell theme-night" : "site-shell"}>
+    <header className="topbar"><div className="brand"><span className="brand-symbol"><Navigation size={18} strokeWidth={2.5} /></span><span>quietroad<span className="brand-period">.</span></span></div><div className="topbar-right"><span>UK road planner</span><span className="topbar-badge">BETA</span><button className="theme-toggle" type="button" aria-label={night ? "Switch to day mode" : "Switch to night mode"} aria-pressed={night} onClick={toggleTheme}>{night ? <><Sun size={16} /> Day</> : <><Moon size={16} /> Night</>}</button></div></header>
     <div className="main-grid">
       <aside className="planner" aria-label="Plan a road journey">
         <p className="eyebrow light">CHOOSE WHEN TO GO</p><h1>Find the <em>quieter</em> way.</h1>
