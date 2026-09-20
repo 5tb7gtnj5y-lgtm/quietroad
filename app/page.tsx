@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { ArrowRight, Clock3, Coffee, ExternalLink, Info, MapPin, Navigation, Route, Search, ShieldCheck, TrafficCone } from 'lucide-react';
+import { ArrowRight, Clock3, Coffee, ExternalLink, Info, MapPin, Navigation, Route, Search, ShieldCheck, } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -79,7 +79,6 @@ export default function Home() {
   const [road, setRoad] = useState('A189 near Blyth');
   const [date, setDate] = useState(nextWeekday);
   const [showGreggs, setShowGreggs] = useState(true);
-  const [trafficKey, setTrafficKey] = useState('');
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -88,7 +87,7 @@ export default function Home() {
     event?.preventDefault();
     setLoading(true); setError(''); setPlan(null);
     try {
-      const res = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, from, to, road, date, showGreggs, trafficKey }) });
+      const res = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, from, to, road, date, showGreggs }) });
       const data = await res.json() as Plan & { error?: string };
       if (!res.ok) throw new Error(data.error && !data.error.toLowerCase().startsWith('internal error') ? data.error : 'The road data could not be checked right now. Please try again.');
       setPlan(data as Plan);
@@ -120,7 +119,6 @@ export default function Home() {
             <Button type="submit" size="lg" className="plan-button" disabled={loading}>{loading ? 'Checking road data…' : 'Find quieter times'}<ArrowRight size={18} /></Button>
           </form>
         </Tabs>
-        <details className="live-setup"><summary><TrafficCone size={18} /> Add a live traffic check <span>Optional</span></summary><p>Enter your TomTom Traffic API key to compare sampled speeds with normal free-flow speeds right now. The key is used for this search and is not saved.</p><Input aria-label="TomTom Traffic API key" type="password" autoComplete="off" placeholder="Traffic API key" value={trafficKey} onChange={e => setTrafficKey(e.target.value)} maxLength={120} /><a href="https://developer.tomtom.com/" target="_blank" rel="noreferrer">About TomTom traffic keys <ExternalLink size={13} /></a></details>
         <div className="planner-foot"><ShieldCheck size={18} /><p>Recommendations use actual published hourly road counts where available. Live speeds require a traffic key.</p></div>
       </aside>
 
@@ -134,7 +132,7 @@ export default function Home() {
             <section className="surface times-panel" aria-labelledby="times-heading"><div className="section-head"><div><p className="eyebrow">FOUR TIME WINDOWS</p><h3 id="times-heading">Quieter times to go</h3></div><span className="time-badge">{new Date(plan.requestedDate + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}</span></div>
               {plan.windows.length ? <><div className="window-list">{plan.windows.map((w, i) => <div className={'window-card ' + (i === 0 ? 'best' : '')} key={w.start}><span className="window-rank">{String(i + 1).padStart(2, '0')}</span><div><strong>{hourLabel(w.start)}–{hourLabel(w.end)}</strong><small>{i === 0 ? 'Quietest measured hour' : 'Among the four quieter hours'}</small></div><div className="window-meter"><b>{w.index}%</b><span>of peak</span></div></div>)}</div><p className="tiny-note">Based on historical sample counts. Lower % means fewer vehicles than the busiest measured hour, not a predicted journey time.</p></> : <div className="window-empty"><Info size={24} /><p>{!plan.daySupported ? 'Weekend counts are not available in this dataset. Select a weekday to see four comparable windows.' : 'There are no suitable nearby hourly counts for this search. Try a numbered road and town.'}</p></div>}
             </section>
-            <div className="side-stack"><MapSketch plan={plan} /><div className="live-card"><div><span className={'status-light ' + (plan.liveStatus === 'available' ? 'active' : '')} /><strong>{plan.liveStatus === 'available' ? 'Live speed samples' : 'Live traffic'}</strong></div>{plan.liveStatus === 'available' ? <p>{liveAvg} mph now vs {freeAvg} mph in free flow, from {plan.live.length} sampled road {plan.live.length === 1 ? 'segment' : 'segments'}.{plan.live.some(s => s.closure) ? ' A sampled segment is reported closed.' : ''}</p> : <p>{plan.liveStatus === 'unavailable' ? 'Live data unavailable. Check the key and try again.' : 'Add a traffic key on the left for current speeds.'}{usualNow ? ' At this hour the historical count is ' + usualNow.index + '% of the measured peak.' : ''}</p>}</div></div>
+            <div className="side-stack"><MapSketch plan={plan} /><div className="live-card"><div><span className={'status-light ' + (plan.liveStatus === 'available' ? 'active' : '')} /><strong>{plan.liveStatus === 'available' ? 'Live speed samples' : 'Live traffic'}</strong></div>{plan.liveStatus === 'available' ? <p>{liveAvg} mph now vs {freeAvg} mph in free flow, from {plan.live.length} sampled road {plan.live.length === 1 ? 'segment' : 'segments'}.{plan.live.some(s => s.closure) ? ' A sampled segment is reported closed.' : ''}</p> : <p>{plan.liveStatus === 'unavailable' ? 'Live traffic unavailable right now. Try again later.' : 'Live traffic is not configured yet.'}{usualNow ? ' At this hour the historical count is ' + usualNow.index + '% of the measured peak.' : ''}</p>}</div></div>
           </div>
           <Profile plan={plan} />
           {plan.notes.length > 0 && <div className="notes-panel">{plan.notes.map(note => <p key={note}><Info size={17} />{note}</p>)}</div>}
