@@ -14,6 +14,7 @@ This folder contains the whole app, including the `/api/plan` service. Use **Wor
 2. Connect GitHub if prompted and select the `quietroad` repository.
 3. Set the application/Worker name to `quietroad` (the same name as in `wrangler.jsonc`). Keep the root directory blank, or use `/` if required.
 4. Set **Build command** to `pnpm run build:vinext` and **Deploy command** to `pnpm run deploy:vinext`. If the dashboard asks for an install command, use `pnpm install --frozen-lockfile`.
+5. For automatic live speeds, open the Worker in Cloudflare and add an encrypted **Secret** named `TOMTOM_API_KEY` in **Settings → Variables and secrets**. Paste your TomTom Traffic API key as its value and deploy the updated Worker. Never add the key to GitHub or to a public build variable.
 5. Select **Save and Deploy**. Once complete, open the `workers.dev` link and try the example Blyth to Newcastle search.
 
 If the build reports a Node version problem, set the build environment variable `NODE_VERSION` to `22.13.0` or newer. If GitHub does not appear in the list, check Cloudflare's GitHub integration permissions for the new repository.
