@@ -104,6 +104,7 @@ input[type="date"] { color-scheme: light; }
 .live-setup summary::-webkit-details-marker { display: none; }
 .live-setup summary span { margin-left: auto; font-size: 12px; color: #a7c5c7; font-weight: 500; }
 .live-setup p { font-size: 14px; color: #bad0d3; line-height: 1.5; }
+.live-setup p svg { display: inline-block; vertical-align: middle; margin-right: 6px; }
 .live-setup input { background: #fff; color: #123043; height: 44px; font-size: 16px; }
 .live-setup a { display: inline-flex; gap: 5px; align-items: center; margin-top: 12px; color: #d9f8a7; font-size: 13px; }
 .planner-foot { display: flex; gap: 10px; align-items: flex-start; border-top: 1px solid #406172; margin-top: 29px; padding-top: 22px; color: #abc1c8; }
