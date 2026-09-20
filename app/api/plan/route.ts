@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findGreggs, findPlace, findRoute, getLive, getSamples, makeProfile, type Plan, type Point } from '@/lib/traffic';
+import { findGreggs, findPlace, findRoute, getLive, getSamples, makeProfile, type Plan, type Point, type Stop } from '@/lib/traffic';
 
 export const maxDuration = 60;
 
@@ -16,7 +16,18 @@ export async function POST(req: NextRequest) {
     if (first.length > 120 || second.length > 120) throw new Error('Keep each location under 120 characters.');
     const [from, to] = await Promise.all([findPlace(first), mode === 'journey' ? findPlace(second) : Promise.resolve(undefined)]);
     if (to && Math.abs(from.point[0] - to.point[0]) + Math.abs(from.point[1] - to.point[1]) < 0.0001) throw new Error('Choose different start and end points.');
-    const route = to ? await findRoute(from.point, to.point) : null;
+    let stop: Stop | undefined;
+    if (mode === 'journey' && body.stop != null) {
+      const raw = body.stop as Record<string, unknown>;
+      const point = raw.point;
+      if (!Array.isArray(point) || point.length !== 2 || point.some(value => typeof value !== 'number' || !Number.isFinite(value)) ||
+        point[0] < -11 || point[0] > 3 || point[1] < 49 || point[1] > 61 ||
+        typeof raw.id !== 'string' || !raw.id || raw.id.length > 100 ||
+        typeof raw.name !== 'string' || !/^Greggs\b/i.test(raw.name) || raw.name.length > 120 ||
+        typeof raw.address !== 'string' || raw.address.length > 180) throw new Error('That Greggs stop is invalid. Choose a shop from the list again.');
+      stop = { id: raw.id, name: raw.name, address: raw.address, point: point as Point };
+    }
+    const route = to ? await findRoute(from.point, to.point, stop?.point) : null;
     const geometry: Point[] = route?.geometry || [from.point];
     const userRoad = first.match(/\b[AMB]\d{1,4}(?:\(M\))?(?!\w)/i)?.[0]?.toUpperCase();
     const roads = route?.roads.length ? route.roads : userRoad ? [userRoad] : [];
@@ -40,7 +51,7 @@ export async function POST(req: NextRequest) {
     if (bakeries.status === 'rejected' && includeGreggs) notes.push('Greggs locations could not be checked right now.');
     if (key && !liveSamples.length) notes.push('Live traffic could not be retrieved right now. Try again later.');
     const plan: Plan = {
-      mode, from, to, geometry, distanceKm: route?.distanceKm, baseMinutes: route?.baseMinutes,
+      mode, from, to, stop, geometry, distanceKm: route?.distanceKm, baseMinutes: route?.baseMinutes,
       roads: roads.length ? roads : samples.map(s => s.road), samples, hourly: profile.hourly, windows: profile.windows, daySupported: profile.daySupported,
       requestedDate: date, greggs, greggsStatus: !includeGreggs ? 'not-requested' : bakeries.status === 'fulfilled' ? 'available' : 'unavailable',
       live: liveSamples, liveStatus: !key ? 'not-connected' : liveSamples.length ? 'available' : 'unavailable', notes,
