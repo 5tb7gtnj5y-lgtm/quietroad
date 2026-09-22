@@ -101,7 +101,7 @@ function MapSketch({ plan }: { plan: Plan }) {
       }} onPointerCancel={() => { drag.current = null; }}>
         <rect width={width} height={height} fill="#e4eee7" />
         {tiles.map(tile => <image key={zoom + '-' + tile.x + '-' + tile.y} href={'https://tile.openstreetmap.org/' + zoom + '/' + tile.x + '/' + tile.y + '.png'} x={tile.screenX} y={tile.screenY} width="256" height="256" />)}
-        {geometry.length > 1 && <><polyline points={path} fill="none" stroke="#004b7a" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity=".9" /><polyline points={path} fill="none" stroke="#ffd12f" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></>}
+        {geometry.length > 1 && <><polyline points={path} fill="none" stroke="#004b7a" strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" opacity=".9" /><polyline points={path} fill="none" stroke="#16a6df" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></>}
         {plan.greggs.map(shop => {
           const p = position(shop.point);
           return <a key={shop.id} href={plan.to ? googleDirections(plan, shop.point) : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(shop.point[1] + ',' + shop.point[0])} target="_blank" rel="noopener noreferrer" aria-label={plan.to ? 'Open full journey via ' + shop.name + ' in Google Maps' : 'Open ' + shop.name + ' in maps'}><circle cx={p.x} cy={p.y} r="12" fill="#ffd12f" stroke="#00558f" strokeWidth="3" /><circle cx={p.x} cy={p.y} r="3" fill="#173548" /></a>;
