@@ -503,3 +503,33 @@ button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visibl
   .check-row { padding: 11px; }
   .surface { border-radius: 18px; }
 }
+
+
+/* Tiny bakery detail requested for the journey planner. */
+.planner-kicker {
+  max-width: 355px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.planner-kicker .eyebrow { margin-bottom: 0; }
+.pastry-pair {
+  width: 64px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 2px 4px;
+  border: 1px solid #ffd12f80;
+  border-radius: 999px;
+  background: #fff6d6;
+  box-shadow: 0 5px 14px #001d3533;
+  transform: rotate(-3deg);
+}
+.pastry-pair svg { width: 55px; height: 23px; display: block; }
+.theme-night .pastry-pair { background: #123b5d; border-color: #ffd12fa6; }
+@media (max-width: 580px) {
+  .pastry-pair { width: 58px; height: 28px; }
+  .pastry-pair svg { width: 50px; height: 21px; }
+}
