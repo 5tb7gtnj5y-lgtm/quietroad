@@ -429,8 +429,8 @@ button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visibl
 .map-head, .map-foot { color: #b7d3e0; }
 .map-head span:first-child { color: #fff; }
 .map-controls button { color: var(--qr-navy); border-color: #a9c9d7; }
-.legend-route, .key-best { background: var(--qr-yellow); }
-.legend-shop { background: var(--qr-sky); }
+.legend-route { background: var(--qr-sky); }
+.legend-shop, .key-best { background: var(--qr-yellow); }
 .live-card { background: #e9f6fb; color: var(--qr-ink); border-color: #c9e5f0; }
 .live-card p { color: #4c6d7f; }
 .bar-fill { background: var(--qr-blue); }
